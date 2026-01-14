@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - SMART PASSWORD EDITION (v5.0)
+# VPS MANAGER OS - AUTO KEY EDITION (v5.1)
 # ============================================================
 
 # --- TEMA ALTO CONTRASTE ---
@@ -37,7 +37,7 @@ DB_FILE="$BASE_DIR/data/db.txt"
 CONFIG_FILE="$BASE_DIR/data/config.env"
 LOG_FILE="$BASE_DIR/logs/system.log"
 SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
-CURRENT_VERSION="5.0.0"
+CURRENT_VERSION="5.1.0"
 
 # --- UTILITÁRIOS ---
 
@@ -83,7 +83,7 @@ manage_firewall() {
 
 create_app() {
     # 1. Nome
-    APP_NAME=$(whiptail --title "1/4 - NOME" --inputbox "Nome do Ambiente (Login SSH):" 10 60 3>&1 1>&2 2>&3)
+    APP_NAME=$(whiptail --title "1/3 - NOME" --inputbox "Nome do Ambiente (Login SSH):" 10 60 3>&1 1>&2 2>&3)
     if [ -z "$APP_NAME" ]; then return; fi
 
     if id "$APP_NAME" &>/dev/null; then
@@ -91,59 +91,69 @@ create_app() {
         return
     fi
 
-    # 2. Lógica de Senha (NOVO)
-    PASS_MODE=$(whiptail --title "2/4 - SENHA" --menu "Escolha o tipo de senha para '$APP_NAME':" 15 70 2 \
-    "1" "Criar Senha Personalizada (Digitar agora)" \
-    "2" "Usar Senha Padrão do Sistema" 3>&1 1>&2 2>&3)
-
-    if [ -z "$PASS_MODE" ]; then return; fi
+    # 2. Senha (Automática ou Manual)
+    # Carrega config se existir
+    if [ -f "$CONFIG_FILE" ]; then source "$CONFIG_FILE"; fi
 
     APP_PASS=""
+    PASS_TYPE="Manual"
 
-    if [ "$PASS_MODE" == "1" ]; then
-        # Senha Manual
-        APP_PASS=$(whiptail --title "SENHA MANUAL" --passwordbox "Digite a senha para este app:" 10 60 3>&1 1>&2 2>&3)
-        if [ -z "$APP_PASS" ]; then return; fi
-    else
-        # Senha Padrão
-        # Carrega config se existir
-        if [ -f "$CONFIG_FILE" ]; then source "$CONFIG_FILE"; fi
-
-        if [ -z "$DEFAULT_SYS_PASS" ]; then
-            # Se não tem senha padrão salva, pede para definir
-            whiptail --msgbox "⚠️ Nenhuma senha padrão definida ainda.\n\nNa próxima tela, defina a senha que será usada automaticamente para os próximos apps (Você pode usar a mesma do Root se quiser)." 14 70
-            
-            DEFAULT_SYS_PASS=$(whiptail --title "DEFINIR PADRÃO" --passwordbox "Digite a Senha Padrão do Sistema:" 10 60 3>&1 1>&2 2>&3)
-            if [ -z "$DEFAULT_SYS_PASS" ]; then return; fi
-            
-            # Salva para o futuro
-            echo "DEFAULT_SYS_PASS='$DEFAULT_SYS_PASS'" > "$CONFIG_FILE"
-            chmod 600 "$CONFIG_FILE" # Protege o arquivo
-        fi
+    # Se já existe senha padrão salva, usa ela direto (SEM PERGUNTAR)
+    if [ ! -z "$DEFAULT_SYS_PASS" ]; then
         APP_PASS="$DEFAULT_SYS_PASS"
+        PASS_TYPE="Automática (Padrão)"
+    else
+        # Se não existe, pergunta se quer definir agora
+        CHOICE=$(whiptail --title "2/3 - CONFIGURAÇÃO DE SENHA" --menu "Como definir a senha deste App?" 15 70 2 \
+        "1" "Digitar senha manualmente agora" \
+        "2" "Definir Senha Padrão (Digitar 1 vez e salvar)" 3>&1 1>&2 2>&3)
+
+        if [ -z "$CHOICE" ]; then return; fi
+
+        if [ "$CHOICE" == "1" ]; then
+            APP_PASS=$(whiptail --title "SENHA" --passwordbox "Digite a senha:" 10 60 3>&1 1>&2 2>&3)
+        else
+            whiptail --msgbox "ℹ️  O Linux não permite ler a senha do root por segurança.\n\nPor favor, digite a senha do root (ou outra) ABAIXO.\n\nEu vou salvá-la e usá-la automaticamente em todos os próximos apps." 15 70
+            APP_PASS=$(whiptail --title "DEFINIR PADRÃO" --passwordbox "Digite a Senha Padrão:" 10 60 3>&1 1>&2 2>&3)
+            
+            # Salva para sempre
+            echo "DEFAULT_SYS_PASS='$APP_PASS'" > "$CONFIG_FILE"
+            chmod 600 "$CONFIG_FILE"
+            PASS_TYPE="Automática (Salva Agora)"
+        fi
     fi
+
+    if [ -z "$APP_PASS" ]; then return; fi
 
     # 3. Root (Sim/Não)
     IS_ROOT="N"
-    if whiptail --title "3/4 - PERMISSÃO ROOT" --yesno "Deseja que '$APP_NAME' tenha permissão ROOT (Sudo)?\n\n[YES] = Pode instalar programas globais\n[NO]  = Isolado (Mais seguro)" 12 60; then
+    if whiptail --title "3/3 - PERMISSÃO ROOT" --yesno "Deseja que '$APP_NAME' tenha permissão ROOT (Sudo)?" 10 60; then
         IS_ROOT="S"
     fi
 
     # 4. Porta Automática
     APP_PORT=$(get_free_port)
 
-    # Confirmação Final
-    ROOT_MSG="NÃO (Isolado)"
-    if [ "$IS_ROOT" == "S" ]; then ROOT_MSG="SIM (Sudo)"; fi
-    PASS_MSG="Personalizada"
-    if [ "$PASS_MODE" == "2" ]; then PASS_MSG="Padrão do Sistema"; fi
+    # Confirmação Rápida
+    ROOT_MSG="NÃO"
+    if [ "$IS_ROOT" == "S" ]; then ROOT_MSG="SIM"; fi
 
-    if ! whiptail --title "CONFIRMAR CRIAÇÃO" --yesno "Resumo:\n\nUsuário: $APP_NAME\nSenha: [$PASS_MSG]\nRoot: $ROOT_MSG\nPorta: $APP_PORT\n\nCriar agora?" 14 60; then return; fi
+    if ! whiptail --title "CRIAR?" --yesno "App: $APP_NAME\nSenha: $PASS_TYPE\nRoot: $ROOT_MSG\nPorta: $APP_PORT" 12 60; then return; fi
 
     # --- EXECUÇÃO ---
     
     useradd -m -s /bin/bash "$APP_NAME"
     echo "$APP_NAME:$APP_PASS" | chpasswd
+
+    # COPIAR CHAVES SSH DO ROOT (NOVO!)
+    # Se o root usa chave SSH, o novo usuário também usará automaticamente
+    if [ -f /root/.ssh/authorized_keys ]; then
+        mkdir -p "/home/$APP_NAME/.ssh"
+        cp /root/.ssh/authorized_keys "/home/$APP_NAME/.ssh/"
+        chown -R "$APP_NAME:$APP_NAME" "/home/$APP_NAME/.ssh"
+        chmod 700 "/home/$APP_NAME/.ssh"
+        chmod 600 "/home/$APP_NAME/.ssh/authorized_keys"
+    fi
 
     if [ "$IS_ROOT" == "S" ]; then
         usermod -aG sudo "$APP_NAME"
@@ -154,9 +164,9 @@ create_app() {
     manage_firewall "allow" "$APP_PORT"
 
     echo "$APP_NAME|$APP_PORT" >> "$DB_FILE"
-    log_action "Criado: $APP_NAME (Porta: $APP_PORT | Root: $IS_ROOT)"
+    log_action "Criado: $APP_NAME"
     
-    whiptail --msgbox "✅ SUCESSO!\n\nLogin SSH Direto:\nssh $APP_NAME@SEU_IP" 12 60
+    whiptail --msgbox "✅ SUCESSO!\n\nLogin: ssh $APP_NAME@SEU_IP\n(Se você usa chave SSH no root, ela já funciona aqui)" 12 60
 }
 
 list_apps() {
@@ -213,9 +223,9 @@ remove_app() {
 # --- ADMIN ---
 
 reset_password_config() {
-    if whiptail --yesno "Deseja redefinir a Senha Padrão do sistema?" 10 60; then
+    if whiptail --yesno "Deseja apagar a Senha Padrão salva?" 10 60; then
         rm -f "$CONFIG_FILE"
-        whiptail --msgbox "Senha padrão removida. Na próxima criação de app, você poderá definir uma nova." 10 60
+        whiptail --msgbox "Senha padrão removida." 10 60
     fi
 }
 
