@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - ULTIMATE EDITION (Com Gestão de Root)
+# VPS MANAGER OS - RAW INFRASTRUCTURE (v3.0)
 # ============================================================
 
-# --- TEMA DARK ---
+# --- TEMA DARK (Hacker Style) ---
 export NEWT_COLORS='
 root=,black
 window=,black
@@ -35,9 +35,8 @@ roottext=white,black
 BASE_DIR="/opt/vps-manager"
 DB_FILE="$BASE_DIR/data/db.txt"
 LOG_FILE="$BASE_DIR/logs/system.log"
-SITES_DIR="/etc/caddy/sites"
 SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
-CURRENT_VERSION="1.6.0"
+CURRENT_VERSION="3.0.0"
 
 # --- UTILITÁRIOS ---
 
@@ -52,122 +51,90 @@ check_root() {
     fi
 }
 
-# --- FUNÇÕES PRINCIPAIS ---
+# --- REDE E FIREWALL ---
+
+get_free_port() {
+    # Procura porta livre a partir da 10000 (para evitar conflitos com portas baixas)
+    local port=10000
+    while true; do
+        if ! ss -lntu | grep -q ":$port " && ! grep -q "|$port|" "$DB_FILE"; then
+            echo "$port"
+            return
+        fi
+        ((port++))
+    done
+}
+
+manage_firewall() {
+    local action=$1 # allow ou delete
+    local port=$2
+    
+    if command -v ufw &> /dev/null; then
+        if [ "$action" == "allow" ]; then
+            ufw allow "$port"/tcp &> /dev/null
+            ufw allow "$port"/udp &> /dev/null
+        elif [ "$action" == "delete" ]; then
+            ufw delete allow "$port"/tcp &> /dev/null
+            ufw delete allow "$port"/udp &> /dev/null
+        fi
+    fi
+}
+
+# --- CORE DO SISTEMA ---
 
 create_app() {
-    APP_NAME=$(whiptail --title "NOVA APLICAÇÃO" --inputbox "Nome da Aplicação (sem espaços):" 10 60 3>&1 1>&2 2>&3)
+    # 1. Apenas pede o nome (como criar uma VPS na DigitalOcean)
+    APP_NAME=$(whiptail --title "CRIAR MINI-VPS" --inputbox "Nome do Ambiente (sem espaços):" 10 60 3>&1 1>&2 2>&3)
     if [ -z "$APP_NAME" ]; then return; fi
 
     if id "$APP_NAME" &>/dev/null; then
-        whiptail --msgbox "❌ Erro: O app '$APP_NAME' já existe." 10 60
+        whiptail --msgbox "❌ Erro: Já existe um ambiente com esse nome." 10 60
         return
     fi
 
-    APP_PORT=$(whiptail --title "REDE" --inputbox "Porta interna (Ex: 3000):" 10 60 3>&1 1>&2 2>&3)
-    if [ -z "$APP_PORT" ]; then return; fi
+    # 2. Aloca recursos automaticamente
+    APP_PORT=$(get_free_port)
 
-    APP_DOMAIN=$(whiptail --title "DOMÍNIO" --inputbox "Domínio (Ex: app.site.com):" 10 60 3>&1 1>&2 2>&3)
-    if [ -z "$APP_DOMAIN" ]; then return; fi
-
-    # Pergunta sobre ROOT na criação (Opcional)
-    IS_ROOT="N"
-    if whiptail --title "PERMISSÃO ESPECIAL" --yesno "Deseja conceder permissão ROOT (Sudo) para este app?\n\n⚠️ CUIDADO: Isso quebra o isolamento de segurança." 12 60; then
-        IS_ROOT="S"
-    fi
-
-    if ! whiptail --title "CONFIRMAR" --yesno "Criar '$APP_NAME'?\n\nPorta: $APP_PORT\nDomínio: $APP_DOMAIN\nRoot: $IS_ROOT" 12 60; then return; fi
-
-    # Criação
+    # 3. Criação (Infraestrutura)
     useradd -m -s /bin/bash "$APP_NAME"
     
-    # Configurar Root se solicitado
-    if [ "$IS_ROOT" == "S" ]; then
-        usermod -aG sudo "$APP_NAME"
-        echo "$APP_NAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$APP_NAME"
-        chmod 0440 "/etc/sudoers.d/$APP_NAME"
-        log_action "App criado com ROOT: $APP_NAME"
-    else
-        log_action "App criado: $APP_NAME"
-    fi
+    # 4. Libera Rede (Firewall)
+    manage_firewall "allow" "$APP_PORT"
+
+    # 5. Registra
+    echo "$APP_NAME|$APP_PORT" >> "$DB_FILE"
+    log_action "Mini-VPS criada: $APP_NAME (Porta: $APP_PORT)"
     
-    cat > "$SITES_DIR/$APP_NAME.caddy" <<CONFIG
-$APP_DOMAIN {
-    reverse_proxy localhost:$APP_PORT
-}
-CONFIG
-    systemctl reload caddy
-    echo "$APP_NAME|$APP_PORT|$APP_DOMAIN" >> "$DB_FILE"
-    
-    whiptail --msgbox "✅ App Criado com Sucesso!" 10 60
+    # 6. Entrega
+    whiptail --msgbox "✅ AMBIENTE CRIADO!\n\nUsuário: $APP_NAME\nPorta Dedicada: $APP_PORT\n\nO firewall já foi aberto nesta porta.\nConfigure seu software para rodar em 0.0.0.0:$APP_PORT" 14 60
 }
 
 list_apps() {
-    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum app criado." 10 60; return; fi
+    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum ambiente criado." 10 60; return; fi
     
-    # Monta lista indicando quem é ROOT
-    LISTA_FMT=""
-    while IFS='|' read -r name port domain; do
-        ROOT_TAG=""
-        if groups "$name" | grep -q "sudo"; then ROOT_TAG="[ROOT]"; fi
-        LISTA_FMT+="$name ($port) $ROOT_TAG -> $domain\n"
-    done < "$DB_FILE"
-    
-    whiptail --title "APPS ATIVOS" --scrolltext --msgbox "$LISTA_FMT" 20 75
+    # Lista simples: Nome e Porta
+    LISTA=$(awk -F'|' '{printf "VPS: %-15s | Porta Externa: %s\n", $1, $2}' "$DB_FILE")
+    whiptail --title "MINI-VPS ATIVAS" --scrolltext --msgbox "$LISTA" 20 70
 }
 
 enter_app() {
-    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum app disponível." 10 60; return; fi
+    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum ambiente disponível." 10 60; return; fi
 
     APPS=()
-    while IFS='|' read -r name port domain; do
-        APPS+=("$name" "$domain")
+    while IFS='|' read -r name port; do
+        APPS+=("$name" "Porta: $port")
     done < "$DB_FILE"
 
-    CHOICE=$(whiptail --title "ACESSAR TERMINAL" --menu "Selecione o App:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
+    CHOICE=$(whiptail --title "ACESSAR TERMINAL" --menu "Escolha o ambiente para conectar:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
 
     if [ ! -z "$CHOICE" ]; then
         clear
         echo "================================================="
-        echo "🖥️  AMBIENTE: $CHOICE"
-        if groups "$CHOICE" | grep -q "sudo"; then echo "⚠️  ATENÇÃO: ESTE USUÁRIO TEM PERMISSÃO ROOT (SUDO)"; fi
-        echo "🔙 Digite 'exit' para voltar ao menu."
+        echo "🚀 CONECTADO EM: $CHOICE"
+        echo "🔌 SUA PORTA LIBERADA É: $(grep "^$CHOICE|" "$DB_FILE" | cut -d'|' -f2)"
+        echo "🔙 Digite 'exit' para voltar ao gerenciador."
         echo "================================================="
         su - "$CHOICE"
-    fi
-}
-
-manage_permissions() {
-    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum app disponível." 10 60; return; fi
-
-    APPS=()
-    while IFS='|' read -r name port domain; do
-        STATUS="Padrão"
-        if groups "$name" | grep -q "sudo"; then STATUS="ROOT/SUDO"; fi
-        APPS+=("$name" "Status: $STATUS")
-    done < "$DB_FILE"
-
-    CHOICE=$(whiptail --title "GERENCIAR PERMISSÕES" --menu "Selecione o App para alterar:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
-
-    if [ ! -z "$CHOICE" ]; then
-        # Verifica status atual
-        if groups "$CHOICE" | grep -q "sudo"; then
-            # Tem root, perguntar se quer tirar
-            if whiptail --title "REVOGAR ROOT" --yesno "O usuário '$CHOICE' tem acesso ROOT.\nDeseja REMOVER essa permissão?" 12 60; then
-                deluser "$CHOICE" sudo
-                rm -f "/etc/sudoers.d/$CHOICE"
-                whiptail --msgbox "✅ Permissão ROOT removida de '$CHOICE'." 10 60
-                log_action "Root revogado: $CHOICE"
-            fi
-        else
-            # Não tem root, perguntar se quer dar
-            if whiptail --title "CONCEDER ROOT" --yesno "⚠️  PERIGO ⚠️\n\nDeseja dar acesso ROOT (Sudo sem senha) para '$CHOICE'?\nEle terá controle total do servidor." 12 60; then
-                usermod -aG sudo "$CHOICE"
-                echo "$CHOICE ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$CHOICE"
-                chmod 0440 "/etc/sudoers.d/$CHOICE"
-                whiptail --msgbox "✅ Permissão ROOT concedida para '$CHOICE'." 10 60
-                log_action "Root concedido: $CHOICE"
-            fi
-        fi
     fi
 }
 
@@ -175,23 +142,58 @@ remove_app() {
     if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nada para remover." 10 60; return; fi
     
     APPS=()
-    while IFS='|' read -r name port domain; do
-        APPS+=("$name" "REMOVER -> $domain")
+    while IFS='|' read -r name port; do
+        APPS+=("$name" "DELETAR (Porta $port)")
     done < "$DB_FILE"
 
-    CHOICE=$(whiptail --title "EXCLUIR APP" --menu "Selecione para DELETAR:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
+    CHOICE=$(whiptail --title "DESTRUIR AMBIENTE" --menu "Selecione para EXCLUIR:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
 
     if [ ! -z "$CHOICE" ]; then
-        if whiptail --title "PERIGO" --yesno "⚠️  Apagar '$CHOICE' e todos os arquivos?" 12 60; then
+        if whiptail --title "CONFIRMAÇÃO DESTRUTIVA" --yesno "⚠️  Isso apagará o usuário '$CHOICE' e todos os arquivos dele.\n\nA porta será fechada no firewall.\nContinuar?" 12 60; then
+            
+            # Recupera porta para fechar firewall
+            PORT=$(grep "^$CHOICE|" "$DB_FILE" | cut -d'|' -f2)
+
+            # Destruição
             pkill -u "$CHOICE"
-            # Remove permissão sudo se existir
-            rm -f "/etc/sudoers.d/$CHOICE"
             userdel -r "$CHOICE"
-            rm -f "$SITES_DIR/$CHOICE.caddy"
-            systemctl reload caddy
+            manage_firewall "delete" "$PORT"
+
+            # Limpa DB
             grep -v "^$CHOICE|" "$DB_FILE" > "$DB_FILE.tmp" && mv "$DB_FILE.tmp" "$DB_FILE"
-            log_action "App removido: $CHOICE"
-            whiptail --msgbox "App removido." 10 60
+            
+            log_action "Mini-VPS destruída: $CHOICE"
+            whiptail --msgbox "Ambiente destruído com sucesso." 10 60
+        fi
+    fi
+}
+
+manage_permissions() {
+    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum ambiente disponível." 10 60; return; fi
+
+    APPS=()
+    while IFS='|' read -r name port; do
+        STATUS="Padrão"
+        if groups "$name" | grep -q "sudo"; then STATUS="ROOT/SUDO"; fi
+        APPS+=("$name" "$STATUS")
+    done < "$DB_FILE"
+
+    CHOICE=$(whiptail --title "PERMISSÕES (ROOT)" --menu "Selecione para alterar permissões:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
+
+    if [ ! -z "$CHOICE" ]; then
+        if groups "$CHOICE" | grep -q "sudo"; then
+            if whiptail --yesno "Remover acesso ROOT de '$CHOICE'?" 10 60; then
+                deluser "$CHOICE" sudo
+                rm -f "/etc/sudoers.d/$CHOICE"
+                whiptail --msgbox "Acesso ROOT removido." 10 60
+            fi
+        else
+            if whiptail --yesno "⚠️  Dar acesso ROOT total para '$CHOICE'?" 10 60; then
+                usermod -aG sudo "$CHOICE"
+                echo "$CHOICE ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$CHOICE"
+                chmod 0440 "/etc/sudoers.d/$CHOICE"
+                whiptail --msgbox "Acesso ROOT concedido." 10 60
+            fi
         fi
     fi
 }
@@ -199,55 +201,54 @@ remove_app() {
 # --- ADMINISTRAÇÃO ---
 
 system_update() {
-    if whiptail --title "ATUALIZAÇÃO" --yesno "Baixar versão mais recente do GitHub?" 10 60; then
+    if whiptail --yesno "Atualizar painel via GitHub?" 10 60; then
         clear
-        echo "⬇️  Baixando..."
         curl -sL "$SCRIPT_URL" > /usr/local/bin/vps-manager
         chmod +x /usr/local/bin/vps-manager
-        echo "✅ Atualizado! Reiniciando..."
-        sleep 1
         exec /usr/local/bin/vps-manager
     fi
 }
 
 system_repair() {
     clear
-    echo "🔧 Reparando..."
-    mkdir -p "$BASE_DIR/data" "$BASE_DIR/logs" "$SITES_DIR"
+    echo "🔧 Reparando permissões e firewall..."
+    mkdir -p "$BASE_DIR/data" "$BASE_DIR/logs"
     chown -R root:root "$BASE_DIR"
-    chmod +x /usr/local/bin/vps-manager
-    systemctl restart caddy
-    if ! command -v pm2 &> /dev/null; then npm install -g pm2; fi
-    echo "✅ Feito."
+    
+    # Garante portas básicas da VPS principal
+    if command -v ufw &> /dev/null; then
+        ufw allow 22/tcp
+        ufw --force enable
+    fi
+    
+    echo "✅ Concluído."
     sleep 2
 }
 
 system_uninstall() {
-    if whiptail --title "DESINSTALAR" --yesno "Remover VPS Manager?" 10 60; then
-        if whiptail --title "DADOS" --yesno "Apagar pastas dos Apps?" 10 60; then
-            rm -rf "$BASE_DIR" "$SITES_DIR"
+    if whiptail --yesno "⚠️  Desinstalar o gerenciador?" 10 60; then
+        if whiptail --yesno "Apagar também os dados dos usuários criados?" 10 60; then
+            rm -rf "$BASE_DIR"
         fi
         rm -f /usr/local/bin/vps-manager
         sed -i '/vps-manager/d' /root/.bashrc
         clear
-        echo "✅ Desinstalado."
+        echo "Desinstalado."
         exit 0
     fi
 }
 
 admin_menu() {
     while true; do
-        CHOICE=$(whiptail --title "ADMINISTRAÇÃO" --menu "Ferramentas" 20 70 10 \
-        "1" "🔄 Atualizar Painel" \
-        "2" "🔧 Reparar Sistema" \
-        "3" "🔁 Reiniciar Serviços" \
-        "4" "❌ Desinstalar Sistema" \
-        "0" "🔙 Voltar" 3>&1 1>&2 2>&3)
+        CHOICE=$(whiptail --title "ADMINISTRAÇÃO" --menu "Opções" 20 70 10 \
+        "1" "Atualizar Painel" \
+        "2" "Reparar Sistema" \
+        "3" "Desinstalar" \
+        "0" "Voltar" 3>&1 1>&2 2>&3)
         case $CHOICE in
             1) system_update ;;
-            2) system_repair; whiptail --msgbox "Concluído." 10 60 ;;
-            3) systemctl restart caddy; whiptail --msgbox "Reiniciado." 10 60 ;;
-            4) system_uninstall ;;
+            2) system_repair; whiptail --msgbox "OK" 10 60 ;;
+            3) system_uninstall ;;
             0) return ;;
         esac
     done
@@ -257,15 +258,15 @@ admin_menu() {
 
 main_menu() {
     while true; do
-        CHOICE=$(whiptail --title "VPS MANAGER OS v$CURRENT_VERSION" --menu "Painel de Controle" 20 65 10 \
-        "1" "🚀 Criar Nova Aplicação" \
-        "2" "📋 Listar Aplicações" \
-        "3" "💻 Entrar no Terminal da App" \
-        "4" "🗑️  Remover Aplicação" \
-        "5" "🛡️  Gerenciar Permissões (Root/Sudo)" \
-        "6" "⚙️  ADMINISTRAÇÃO DO SISTEMA" \
-        "7" "🔒 Shell Root (Sair do Menu)" \
-        "0" "🚪 Logout SSH" 3>&1 1>&2 2>&3)
+        CHOICE=$(whiptail --title "VPS MANAGER OS (RAW)" --menu "Gerenciador de Ambientes" 20 65 10 \
+        "1" "➕ Criar Mini-VPS (Ambiente)" \
+        "2" "📋 Listar Ambientes" \
+        "3" "💻 Entrar no Terminal" \
+        "4" "🗑️  Destruir Ambiente" \
+        "5" "🛡️  Gerenciar Root/Sudo" \
+        "6" "⚙️  Admin / Atualizar" \
+        "7" "🔒 Shell Root" \
+        "0" "🚪 Sair" 3>&1 1>&2 2>&3)
 
         if [ $? -ne 0 ]; then continue; fi
 
@@ -276,7 +277,7 @@ main_menu() {
             4) remove_app ;;
             5) manage_permissions ;;
             6) admin_menu ;;
-            7) clear; echo "⚠️  Shell Root. Digite 'vps-manager' para voltar."; break ;;
+            7) clear; echo "Shell Root. Digite 'vps-manager' para voltar."; break ;;
             0) clear; exit 0 ;;
         esac
     done
@@ -284,6 +285,6 @@ main_menu() {
 
 # --- START ---
 check_root
-mkdir -p "$BASE_DIR/data" "$BASE_DIR/logs" "$SITES_DIR"
+mkdir -p "$BASE_DIR/data" "$BASE_DIR/logs"
 touch "$DB_FILE"
 main_menu
