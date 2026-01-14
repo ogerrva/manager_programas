@@ -1,11 +1,10 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - DARK EDITION
+# VPS MANAGER OS - PRO EDITION (Dark Theme)
 # ============================================================
 
-# --- CONFIGURAÇÃO DE CORES (TEMA DARK) ---
-# Isso força o whiptail a usar preto/verde/branco
+# --- TEMA DARK (Hacker Style) ---
 export NEWT_COLORS='
 root=,black
 window=,black
@@ -32,13 +31,15 @@ helpline=white,black
 roottext=white,black
 '
 
-# --- VARIÁVEIS GLOBAIS ---
+# --- VARIÁVEIS ---
 BASE_DIR="/opt/vps-manager"
 DB_FILE="$BASE_DIR/data/db.txt"
 LOG_FILE="$BASE_DIR/logs/system.log"
 SITES_DIR="/etc/caddy/sites"
+SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
+CURRENT_VERSION="1.5.0"
 
-# --- FUNÇÕES UTILITÁRIAS ---
+# --- UTILITÁRIOS ---
 
 log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
@@ -46,33 +47,30 @@ log_action() {
 
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        whiptail --msgbox "❌ Erro: Você precisa ser ROOT para gerenciar o sistema." 10 60
+        whiptail --msgbox "❌ Erro: Execute como ROOT." 10 60
         exit 1
     fi
 }
 
-# --- FUNÇÕES DO SISTEMA ---
+# --- FUNÇÕES DE APLICAÇÃO ---
 
 create_app() {
-    # Input do nome
-    APP_NAME=$(whiptail --title "NOVA APLICAÇÃO" --inputbox "Digite o nome da aplicação (sem espaços):" 10 60 3>&1 1>&2 2>&3)
+    APP_NAME=$(whiptail --title "NOVA APLICAÇÃO" --inputbox "Nome da Aplicação (sem espaços):" 10 60 3>&1 1>&2 2>&3)
     if [ -z "$APP_NAME" ]; then return; fi
 
-    # Validação
     if id "$APP_NAME" &>/dev/null; then
         whiptail --msgbox "❌ Erro: O app '$APP_NAME' já existe." 10 60
         return
     fi
 
-    APP_PORT=$(whiptail --title "CONFIGURAÇÃO DE REDE" --inputbox "Qual porta interna o app vai usar? (Ex: 3000)" 10 60 3>&1 1>&2 2>&3)
+    APP_PORT=$(whiptail --title "REDE" --inputbox "Porta interna (Ex: 3000):" 10 60 3>&1 1>&2 2>&3)
     if [ -z "$APP_PORT" ]; then return; fi
 
-    APP_DOMAIN=$(whiptail --title "DOMÍNIO" --inputbox "Qual o domínio? (Ex: app.site.com)" 10 60 3>&1 1>&2 2>&3)
+    APP_DOMAIN=$(whiptail --title "DOMÍNIO" --inputbox "Domínio (Ex: app.site.com):" 10 60 3>&1 1>&2 2>&3)
     if [ -z "$APP_DOMAIN" ]; then return; fi
 
-    if ! whiptail --title "CONFIRMAÇÃO" --yesno "Criar '$APP_NAME'?\n\nPorta: $APP_PORT\nDomínio: $APP_DOMAIN" 10 60; then return; fi
+    if ! whiptail --title "CONFIRMAR" --yesno "Criar '$APP_NAME'?\n\nPorta: $APP_PORT\nDomínio: $APP_DOMAIN" 10 60; then return; fi
 
-    # Criação
     useradd -m -s /bin/bash "$APP_NAME"
     
     cat > "$SITES_DIR/$APP_NAME.caddy" <<CONFIG
@@ -81,7 +79,6 @@ $APP_DOMAIN {
 }
 CONFIG
     systemctl reload caddy
-
     echo "$APP_NAME|$APP_PORT|$APP_DOMAIN" >> "$DB_FILE"
     
     log_action "App criado: $APP_NAME"
@@ -90,29 +87,22 @@ CONFIG
 
 list_apps() {
     if [ ! -s "$DB_FILE" ]; then
-        whiptail --msgbox "Nenhum app criado ainda." 10 60
+        whiptail --msgbox "Nenhum app criado." 10 60
         return
     fi
-    
-    # Formata a lista para leitura apenas
     LISTA=$(awk -F'|' '{printf "App: %-15s | Porta: %-5s | Domínio: %s\n", $1, $2, $3}' "$DB_FILE")
-    whiptail --title "LISTA DE APLICAÇÕES" --scrolltext --msgbox "$LISTA" 20 75
+    whiptail --title "APPS ATIVOS" --scrolltext --msgbox "$LISTA" 20 75
 }
 
 enter_app() {
-    if [ ! -s "$DB_FILE" ]; then
-        whiptail --msgbox "Nenhum app disponível para acessar." 10 60
-        return
-    fi
+    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nenhum app disponível." 10 60; return; fi
 
-    # Monta o array para o menu de seleção
     APPS=()
     while IFS='|' read -r name port domain; do
         APPS+=("$name" "$domain ($port)")
     done < "$DB_FILE"
 
-    # Menu de Seleção (Não precisa digitar)
-    CHOICE=$(whiptail --title "ACESSAR TERMINAL" --menu "Selecione o App para entrar:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
+    CHOICE=$(whiptail --title "ACESSAR TERMINAL" --menu "Selecione o App:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
 
     if [ ! -z "$CHOICE" ]; then
         clear
@@ -125,46 +115,114 @@ enter_app() {
 }
 
 remove_app() {
-    if [ ! -s "$DB_FILE" ]; then 
-        whiptail --msgbox "Nada para remover." 10 60
-        return 
-    fi
+    if [ ! -s "$DB_FILE" ]; then whiptail --msgbox "Nada para remover." 10 60; return; fi
     
     APPS=()
     while IFS='|' read -r name port domain; do
         APPS+=("$name" "REMOVER -> $domain")
     done < "$DB_FILE"
 
-    # Menu de Seleção para Remoção
-    CHOICE=$(whiptail --title "🗑️ DELETAR APP" --menu "Selecione o App para EXCLUIR:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
+    CHOICE=$(whiptail --title "EXCLUIR APP" --menu "Selecione para DELETAR:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
 
     if [ ! -z "$CHOICE" ]; then
-        if whiptail --title "PERIGO" --yesno "⚠️  Tem certeza que deseja apagar o app '$CHOICE'?\nIsso deletará todos os arquivos e configurações dele." 12 60; then
-            
+        if whiptail --title "PERIGO" --yesno "⚠️  Apagar '$CHOICE' e todos os arquivos?" 12 60; then
             pkill -u "$CHOICE"
             userdel -r "$CHOICE"
             rm -f "$SITES_DIR/$CHOICE.caddy"
             systemctl reload caddy
-            
-            # Remove linha do arquivo DB
             grep -v "^$CHOICE|" "$DB_FILE" > "$DB_FILE.tmp" && mv "$DB_FILE.tmp" "$DB_FILE"
-            
             log_action "App removido: $CHOICE"
             whiptail --msgbox "App removido." 10 60
         fi
     fi
 }
 
+# --- FUNÇÕES ADMINISTRATIVAS (NOVAS) ---
+
+system_update() {
+    if whiptail --title "ATUALIZAÇÃO" --yesno "Deseja baixar a versão mais recente do GitHub e reinstalar o painel?" 10 60; then
+        clear
+        echo "⬇️  Baixando atualização..."
+        curl -sL "$SCRIPT_URL" > /usr/local/bin/vps-manager
+        chmod +x /usr/local/bin/vps-manager
+        echo "✅ Atualizado! Reiniciando..."
+        sleep 1
+        exec /usr/local/bin/vps-manager
+    fi
+}
+
+system_repair() {
+    clear
+    echo "🔧 Iniciando Reparo do Sistema..."
+    
+    echo "1. Verificando diretórios..."
+    mkdir -p "$BASE_DIR/data" "$BASE_DIR/logs" "$SITES_DIR"
+    
+    echo "2. Ajustando permissões..."
+    chown -R root:root "$BASE_DIR"
+    chmod +x /usr/local/bin/vps-manager
+    
+    echo "3. Reiniciando Proxy (Caddy)..."
+    systemctl restart caddy
+    
+    echo "4. Verificando dependências..."
+    if ! command -v pm2 &> /dev/null; then npm install -g pm2; fi
+    
+    echo "✅ Reparo concluído."
+    sleep 2
+}
+
+system_uninstall() {
+    if whiptail --title "DESINSTALAR" --yesno "⚠️  PERIGO: Isso removerá o VPS Manager do sistema.\n\nDeseja continuar?" 12 60; then
+        if whiptail --title "DADOS" --yesno "Deseja APAGAR também as pastas dos Apps e configurações?" 10 60; then
+            rm -rf "$BASE_DIR"
+            rm -rf "$SITES_DIR"
+            echo "🗑️  Dados removidos."
+        else
+            echo "ℹ️  Dados mantidos em $BASE_DIR"
+        fi
+        
+        # Remove atalho e boot
+        rm -f /usr/local/bin/vps-manager
+        sed -i '/vps-manager/d' /root/.bashrc
+        
+        clear
+        echo "✅ Sistema desinstalado. Adeus."
+        exit 0
+    fi
+}
+
+admin_menu() {
+    while true; do
+        CHOICE=$(whiptail --title "ADMINISTRAÇÃO" --menu "Ferramentas do Sistema" 20 70 10 \
+        "1" "🔄 Atualizar Painel (Git Pull)" \
+        "2" "🔧 Reparar Sistema / Permissões" \
+        "3" "🔁 Reiniciar Serviços (Caddy/PM2)" \
+        "4" "❌ Desinstalar Sistema" \
+        "0" "🔙 Voltar" 3>&1 1>&2 2>&3)
+
+        case $CHOICE in
+            1) system_update ;;
+            2) system_repair; whiptail --msgbox "Reparo concluído." 10 60 ;;
+            3) systemctl restart caddy; whiptail --msgbox "Serviços reiniciados." 10 60 ;;
+            4) system_uninstall ;;
+            0) return ;;
+        esac
+    done
+}
+
 # --- MENU PRINCIPAL ---
 
 main_menu() {
     while true; do
-        CHOICE=$(whiptail --title "VPS MANAGER OS" --menu "Painel de Controle" 20 60 10 \
-        "1" "Criar Nova Aplicação" \
-        "2" "Listar Aplicações" \
-        "3" "Entrar no Terminal da App" \
-        "4" "Remover Aplicação" \
-        "5" "Sair (Logout)" 3>&1 1>&2 2>&3)
+        CHOICE=$(whiptail --title "VPS MANAGER OS v$CURRENT_VERSION" --menu "Painel de Controle" 20 65 10 \
+        "1" "🚀 Criar Nova Aplicação" \
+        "2" "📋 Listar Aplicações" \
+        "3" "💻 Entrar no Terminal da App" \
+        "4" "🗑️  Remover Aplicação" \
+        "5" "⚙️  ADMINISTRAÇÃO DO SISTEMA" \
+        "6" "🔒 Shell Root (Sair do Menu)" \
+        "0" "🚪 Logout SSH" 3>&1 1>&2 2>&3)
 
         if [ $? -ne 0 ]; then continue; fi
 
@@ -173,7 +231,9 @@ main_menu() {
             2) list_apps ;;
             3) enter_app ;;
             4) remove_app ;;
-            5) clear; exit 0 ;;
+            5) admin_menu ;;
+            6) clear; echo "⚠️  Shell Root. Digite 'vps-manager' para voltar."; break ;;
+            0) clear; exit 0 ;;
         esac
     done
 }
