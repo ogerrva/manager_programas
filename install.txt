@@ -1,0 +1,6 @@
+sudo apt update && sudo apt install -y git curl sudo nodejs npm caddy && \
+cd /opt && \
+sudo git clone https://github.com/ogerrva/manager_programas.git && \
+sudo chown -R root:root /opt/manager_programas && \
+sudo chmod +x /opt/manager_programas/*.sh && \
+sudo ln -sf /opt/manager_programas/manager.sh /usr/local/bin/vps-manager
