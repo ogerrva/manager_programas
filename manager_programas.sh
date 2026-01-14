@@ -1,16 +1,23 @@
 #!/bin/bash
 
-BASE_DIR="/opt/vps-manager"
+BASE_DIR="/opt/manager_programas/apps"
 CADDY_APPS="/etc/caddy/apps"
 
-mkdir -p "$BASE_DIR/apps"
-mkdir -p "$CADDY_APPS"
+mkdir -p "$BASE_DIR" "$CADDY_APPS"
 
-function pause() {
+pause() {
   read -p "Pressione ENTER para continuar..."
 }
 
-function create_app() {
+header() {
+  clear
+  echo "======================================"
+  echo "      VPS MANAGER OS"
+  echo "======================================"
+}
+
+create_app() {
+  header
   read -p "Nome do app (ex: app1): " APP
   read -p "Porta interna (ex: 3001): " PORT
   read -p "Dominio (ex: app1.seudominio.com): " DOMAIN
@@ -23,20 +30,17 @@ function create_app() {
     return
   fi
 
-  echo "▶ Criando usuário $USER"
   adduser --disabled-password --gecos "" "$USER"
 
-  echo "▶ Instalando PM2 para $USER"
   sudo -u "$USER" bash <<EOF
 npm install -g pm2
 pm2 startup systemd -u $USER --hp /home/$USER >/dev/null
 EOF
 
-  mkdir -p "$BASE_DIR/apps/$APP"
-  echo "APP=$APP" > "$BASE_DIR/apps/$APP/info.conf"
-  echo "PORT=$PORT" > "$BASE_DIR/apps/$APP/ports.conf"
+  mkdir -p "$BASE_DIR/$APP"
+  echo "APP=$APP" > "$BASE_DIR/$APP/info.conf"
+  echo "PORT=$PORT" > "$BASE_DIR/$APP/port.conf"
 
-  echo "▶ Criando config do Caddy"
   cat > "$CADDY_APPS/$APP.caddy" <<EOF
 $DOMAIN {
     reverse_proxy localhost:$PORT
@@ -45,19 +49,19 @@ EOF
 
   caddy reload --config /etc/caddy/Caddyfile
 
-  echo "✅ App $APP criado com sucesso!"
-  echo "Usuário: $USER"
-  echo "Home: /home/$USER"
+  echo "✅ App criado com sucesso!"
   pause
 }
 
-function list_apps() {
-  echo "📦 Apps instalados:"
-  ls "$BASE_DIR/apps"
+list_apps() {
+  header
+  echo "Apps instalados:"
+  ls "$BASE_DIR" 2>/dev/null || echo "Nenhum app"
   pause
 }
 
-function enter_app() {
+enter_app() {
+  header
   read -p "Nome do app: " APP
   USER="vps_$APP"
 
@@ -67,11 +71,11 @@ function enter_app() {
     return
   fi
 
-  echo "▶ Entrando no app $APP"
   su - "$USER"
 }
 
-function remove_app() {
+remove_app() {
+  header
   read -p "Nome do app para remover: " APP
   USER="vps_$APP"
 
@@ -82,25 +86,31 @@ function remove_app() {
   fi
 
   userdel -r "$USER"
-  rm -rf "$BASE_DIR/apps/$APP"
+  rm -rf "$BASE_DIR/$APP"
   rm -f "$CADDY_APPS/$APP.caddy"
+
   caddy reload --config /etc/caddy/Caddyfile
 
   echo "🗑️ App removido"
   pause
 }
 
-while true; do
+bash_shell() {
   clear
-  echo "=============================="
-  echo "   VPS MANAGER (mini-VPS)"
-  echo "=============================="
-  echo "1) Criar nova VPS (App)"
+  echo "⚠️ Shell administrativo (exit para voltar)"
+  bash
+}
+
+while true; do
+  header
+  echo "1) Criar nova mini-VPS (App)"
   echo "2) Listar apps"
-  echo "3) Entrar no app"
+  echo "3) Entrar em um app"
   echo "4) Remover app"
-  echo "5) Sair"
-  echo "=============================="
+  echo "5) Abrir shell bash"
+  echo "6) Reiniciar menu"
+  echo "7) Sair (logout SSH)"
+  echo "======================================"
   read -p "Escolha: " OP
 
   case $OP in
@@ -108,7 +118,9 @@ while true; do
     2) list_apps ;;
     3) enter_app ;;
     4) remove_app ;;
-    5) exit ;;
+    5) bash_shell ;;
+    6) continue ;;
+    7) exit ;;
     *) echo "Opção inválida"; pause ;;
   esac
 done
