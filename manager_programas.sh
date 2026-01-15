@@ -1,32 +1,34 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - AUTO KEY EDITION (v5.1)
+# VPS MANAGER OS - EXTREME CONTRAST (v5.2)
 # ============================================================
 
-# --- TEMA ALTO CONTRASTE ---
+# --- TEMA CONTRASTE EXTREMO ---
+# actbutton = Onde seu cursor ESTÁ (Vermelho)
+# button    = Onde seu cursor NÃO ESTÁ (Cinza)
 export NEWT_COLORS='
 root=,black
 window=,black
-border=green,black
+border=white,black
 shadow=,black
-title=green,black
-button=white,gray
-actbutton=black,yellow
-compactbutton=white,gray
-checkbox=green,black
-actcheckbox=black,yellow
+title=white,black
+button=black,lightgray
+actbutton=white,red
+compactbutton=black,lightgray
+checkbox=white,black
+actcheckbox=white,red
 entry=white,black
 disentry=gray,black
 label=white,black
 listbox=white,black
-actlistbox=black,yellow
-sellistbox=black,yellow
-actsellistbox=black,yellow
+actlistbox=white,red
+sellistbox=white,red
+actsellistbox=white,red
 textbox=white,black
 acttextbox=black,white
 emptyscale=,black
-fullscale=green,black
+fullscale=red,black
 helpline=white,black
 roottext=white,black
 '
@@ -37,7 +39,7 @@ DB_FILE="$BASE_DIR/data/db.txt"
 CONFIG_FILE="$BASE_DIR/data/config.env"
 LOG_FILE="$BASE_DIR/logs/system.log"
 SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
-CURRENT_VERSION="5.1.0"
+CURRENT_VERSION="5.2.0"
 
 # --- UTILITÁRIOS ---
 
@@ -92,18 +94,15 @@ create_app() {
     fi
 
     # 2. Senha (Automática ou Manual)
-    # Carrega config se existir
     if [ -f "$CONFIG_FILE" ]; then source "$CONFIG_FILE"; fi
 
     APP_PASS=""
     PASS_TYPE="Manual"
 
-    # Se já existe senha padrão salva, usa ela direto (SEM PERGUNTAR)
     if [ ! -z "$DEFAULT_SYS_PASS" ]; then
         APP_PASS="$DEFAULT_SYS_PASS"
         PASS_TYPE="Automática (Padrão)"
     else
-        # Se não existe, pergunta se quer definir agora
         CHOICE=$(whiptail --title "2/3 - CONFIGURAÇÃO DE SENHA" --menu "Como definir a senha deste App?" 15 70 2 \
         "1" "Digitar senha manualmente agora" \
         "2" "Definir Senha Padrão (Digitar 1 vez e salvar)" 3>&1 1>&2 2>&3)
@@ -116,7 +115,6 @@ create_app() {
             whiptail --msgbox "ℹ️  O Linux não permite ler a senha do root por segurança.\n\nPor favor, digite a senha do root (ou outra) ABAIXO.\n\nEu vou salvá-la e usá-la automaticamente em todos os próximos apps." 15 70
             APP_PASS=$(whiptail --title "DEFINIR PADRÃO" --passwordbox "Digite a Senha Padrão:" 10 60 3>&1 1>&2 2>&3)
             
-            # Salva para sempre
             echo "DEFAULT_SYS_PASS='$APP_PASS'" > "$CONFIG_FILE"
             chmod 600 "$CONFIG_FILE"
             PASS_TYPE="Automática (Salva Agora)"
@@ -134,7 +132,7 @@ create_app() {
     # 4. Porta Automática
     APP_PORT=$(get_free_port)
 
-    # Confirmação Rápida
+    # Confirmação
     ROOT_MSG="NÃO"
     if [ "$IS_ROOT" == "S" ]; then ROOT_MSG="SIM"; fi
 
@@ -145,8 +143,7 @@ create_app() {
     useradd -m -s /bin/bash "$APP_NAME"
     echo "$APP_NAME:$APP_PASS" | chpasswd
 
-    # COPIAR CHAVES SSH DO ROOT (NOVO!)
-    # Se o root usa chave SSH, o novo usuário também usará automaticamente
+    # Copiar chaves SSH
     if [ -f /root/.ssh/authorized_keys ]; then
         mkdir -p "/home/$APP_NAME/.ssh"
         cp /root/.ssh/authorized_keys "/home/$APP_NAME/.ssh/"
@@ -166,7 +163,7 @@ create_app() {
     echo "$APP_NAME|$APP_PORT" >> "$DB_FILE"
     log_action "Criado: $APP_NAME"
     
-    whiptail --msgbox "✅ SUCESSO!\n\nLogin: ssh $APP_NAME@SEU_IP\n(Se você usa chave SSH no root, ela já funciona aqui)" 12 60
+    whiptail --msgbox "✅ SUCESSO!\n\nLogin: ssh $APP_NAME@SEU_IP" 12 60
 }
 
 list_apps() {
