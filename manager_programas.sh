@@ -1,34 +1,35 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - DARK MATRIX EDITION (v7.0)
+# VPS MANAGER OS - HIGH CONTRAST DARK (v8.0)
 # ============================================================
 
-# --- TEMA DARK MATRIX (Alto Contraste) ---
-# Fundo Preto, Bordas Verdes.
-# O item selecionado fica VERDE (Fundo) com letra PRETA.
+# --- TEMA DARK COM SELEÇÃO AMARELA (CORRIGIDO) ---
+# root/window = Preto (Fundo Dark)
+# button      = Cinza (Botão inativo)
+# actbutton   = AMARELO (Botão onde você está)
 export NEWT_COLORS='
 root=,black
 window=,black
-border=green,black
+border=white,black
 shadow=,black
-title=green,black
-button=white,black
-actbutton=black,green
-compactbutton=white,black
-checkbox=green,black
-actcheckbox=black,green
+title=white,black
+button=white,gray
+actbutton=black,yellow
+compactbutton=white,gray
+checkbox=white,black
+actcheckbox=black,yellow
 entry=white,black
 disentry=gray,black
 label=white,black
 listbox=white,black
-actlistbox=black,green
-sellistbox=black,green
-actsellistbox=black,green
+actlistbox=black,yellow
+sellistbox=black,yellow
+actsellistbox=black,yellow
 textbox=white,black
 acttextbox=black,white
 emptyscale=,black
-fullscale=green,black
+fullscale=yellow,black
 helpline=white,black
 roottext=white,black
 '
@@ -39,7 +40,7 @@ DB_FILE="$BASE_DIR/data/db.txt"
 CONFIG_FILE="$BASE_DIR/data/config.env"
 LOG_FILE="$BASE_DIR/logs/system.log"
 SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
-CURRENT_VERSION="7.0.0"
+CURRENT_VERSION="8.0.0"
 
 # --- UTILITÁRIOS ---
 
@@ -197,7 +198,7 @@ remove_app() {
             
             manage_firewall "delete" "$PORT"
 
-            # Remoção Forçada do DB
+            # Remoção Forçada
             sed -i "/^$CHOICE|/d" "$DB_FILE"
             
             log_action "Removido: $CHOICE"
