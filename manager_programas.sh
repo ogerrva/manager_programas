@@ -1,35 +1,34 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - HIGH CONTRAST DARK (v8.0)
+# VPS MANAGER OS - RED/BLUE EDITION (v9.0)
 # ============================================================
 
-# --- TEMA DARK COM SELEÇÃO AMARELA (CORRIGIDO) ---
-# root/window = Preto (Fundo Dark)
-# button      = Cinza (Botão inativo)
-# actbutton   = AMARELO (Botão onde você está)
+# --- TEMA DE CONTRASTE MÁXIMO (RED vs BLUE) ---
+# button    = AZUL (Não selecionado)
+# actbutton = VERMELHO (Selecionado - Onde você está)
 export NEWT_COLORS='
 root=,black
-window=,black
-border=white,black
+window=black,lightgray
+border=black,lightgray
 shadow=,black
-title=white,black
-button=white,gray
-actbutton=black,yellow
-compactbutton=white,gray
-checkbox=white,black
-actcheckbox=black,yellow
-entry=white,black
-disentry=gray,black
-label=white,black
-listbox=white,black
-actlistbox=black,yellow
-sellistbox=black,yellow
-actsellistbox=black,yellow
-textbox=white,black
+title=black,lightgray
+button=white,blue
+actbutton=white,red
+compactbutton=white,blue
+checkbox=black,lightgray
+actcheckbox=white,red
+entry=white,blue
+disentry=gray,lightgray
+label=black,lightgray
+listbox=black,lightgray
+actlistbox=white,red
+sellistbox=white,red
+actsellistbox=white,red
+textbox=black,lightgray
 acttextbox=black,white
-emptyscale=,black
-fullscale=yellow,black
+emptyscale=,gray
+fullscale=red,gray
 helpline=white,black
 roottext=white,black
 '
@@ -40,7 +39,7 @@ DB_FILE="$BASE_DIR/data/db.txt"
 CONFIG_FILE="$BASE_DIR/data/config.env"
 LOG_FILE="$BASE_DIR/logs/system.log"
 SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
-CURRENT_VERSION="8.0.0"
+CURRENT_VERSION="9.0.0"
 
 # --- UTILITÁRIOS ---
 
@@ -85,9 +84,17 @@ manage_firewall() {
 # --- CORE ---
 
 create_app() {
-    # 1. Nome
-    APP_NAME=$(whiptail --title "NOVA VPS" --inputbox "Nome do Ambiente:" 10 60 3>&1 1>&2 2>&3)
-    if [ -z "$APP_NAME" ]; then return; fi
+    # 1. Nome (COM CORREÇÃO AUTOMÁTICA DE ESPAÇOS)
+    RAW_NAME=$(whiptail --title "NOVA VPS" --inputbox "Nome do Ambiente:" 10 60 3>&1 1>&2 2>&3)
+    if [ -z "$RAW_NAME" ]; then return; fi
+
+    # Converte espaços para traços e maiúsculas para minúsculas
+    APP_NAME=$(echo "$RAW_NAME" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+
+    # Avisa se houve mudança
+    if [ "$RAW_NAME" != "$APP_NAME" ]; then
+        whiptail --msgbox "ℹ️  Ajuste Automático:\n\nO nome '$RAW_NAME' foi alterado para '$APP_NAME' para evitar erros no Linux." 12 60
+    fi
 
     if id "$APP_NAME" &>/dev/null; then
         whiptail --msgbox "❌ Erro: Já existe um usuário com esse nome." 10 60
@@ -171,6 +178,30 @@ enter_app() {
     CHOICE=$(whiptail --title "ACESSAR" --menu "Escolha:" 20 70 10 "${APPS[@]}" 3>&1 1>&2 2>&3)
 
     if [ ! -z "$CHOICE" ]; then
+        
+        # Verifica se o usuário tem permissão SUDO
+        HAS_SUDO="N"
+        if groups "$CHOICE" | grep -q "sudo"; then HAS_SUDO="S"; fi
+
+        if [ "$HAS_SUDO" == "S" ]; then
+            # Pergunta como quer entrar
+            MODE=$(whiptail --title "MODO DE ACESSO" --menu "Este usuário é ADMIN. Como deseja entrar?" 15 60 2 \
+            "1" "Entrar como Usuário ($CHOICE)" \
+            "2" "Entrar como ROOT (Direto)" 3>&1 1>&2 2>&3)
+
+            if [ -z "$MODE" ]; then return; fi
+
+            if [ "$MODE" == "2" ]; then
+                clear
+                echo "🚀 Entrando como ROOT na pasta de $CHOICE..."
+                cd "/home/$CHOICE"
+                # Abre um shell bash mantendo o root
+                bash
+                return
+            fi
+        fi
+
+        # Login padrão (Usuário)
         clear
         echo "🚀 CONECTADO EM: $CHOICE"
         su - "$CHOICE"
@@ -198,7 +229,6 @@ remove_app() {
             
             manage_firewall "delete" "$PORT"
 
-            # Remoção Forçada
             sed -i "/^$CHOICE|/d" "$DB_FILE"
             
             log_action "Removido: $CHOICE"
