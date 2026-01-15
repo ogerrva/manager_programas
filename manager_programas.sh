@@ -1,12 +1,37 @@
 #!/bin/bash
 
 # ============================================================
-# VPS MANAGER OS - STABILITY EDITION (v6.0)
+# VPS MANAGER OS - DARK MATRIX EDITION (v7.0)
 # ============================================================
 
-# --- TEMA PADRÃO (NATIVO) ---
-# Removemos customizações para garantir que a seleção funcione
-unset NEWT_COLORS
+# --- TEMA DARK MATRIX (Alto Contraste) ---
+# Fundo Preto, Bordas Verdes.
+# O item selecionado fica VERDE (Fundo) com letra PRETA.
+export NEWT_COLORS='
+root=,black
+window=,black
+border=green,black
+shadow=,black
+title=green,black
+button=white,black
+actbutton=black,green
+compactbutton=white,black
+checkbox=green,black
+actcheckbox=black,green
+entry=white,black
+disentry=gray,black
+label=white,black
+listbox=white,black
+actlistbox=black,green
+sellistbox=black,green
+actsellistbox=black,green
+textbox=white,black
+acttextbox=black,white
+emptyscale=,black
+fullscale=green,black
+helpline=white,black
+roottext=white,black
+'
 
 # --- VARIÁVEIS ---
 BASE_DIR="/opt/vps-manager"
@@ -14,7 +39,7 @@ DB_FILE="$BASE_DIR/data/db.txt"
 CONFIG_FILE="$BASE_DIR/data/config.env"
 LOG_FILE="$BASE_DIR/logs/system.log"
 SCRIPT_URL="https://raw.githubusercontent.com/ogerrva/manager_programas/main/manager_programas.sh"
-CURRENT_VERSION="6.0.0"
+CURRENT_VERSION="7.0.0"
 
 # --- UTILITÁRIOS ---
 
@@ -164,27 +189,19 @@ remove_app() {
     if [ ! -z "$CHOICE" ]; then
         if whiptail --title "CONFIRMAÇÃO" --yesno "⚠️  Tem certeza que deseja apagar '$CHOICE'?" 10 60; then
             
-            # 1. Pega a porta antes de apagar
             PORT=$(grep "^$CHOICE|" "$DB_FILE" | cut -d'|' -f2)
 
-            # 2. Mata processos e usuário
             pkill -u "$CHOICE"
             userdel -r "$CHOICE" 2>/dev/null
             rm -f "/etc/sudoers.d/$CHOICE"
             
-            # 3. Fecha Firewall
             manage_firewall "delete" "$PORT"
 
-            # 4. CORREÇÃO CRÍTICA: Remove do DB usando SED (Força Bruta)
+            # Remoção Forçada do DB
             sed -i "/^$CHOICE|/d" "$DB_FILE"
             
-            # 5. Verifica se apagou mesmo
-            if grep -q "^$CHOICE|" "$DB_FILE"; then
-                whiptail --msgbox "❌ ERRO: Falha ao remover do banco de dados. Tente novamente." 10 60
-            else
-                log_action "Removido: $CHOICE"
-                whiptail --msgbox "✅ Ambiente '$CHOICE' destruído com sucesso." 10 60
-            fi
+            log_action "Removido: $CHOICE"
+            whiptail --msgbox "✅ Ambiente '$CHOICE' destruído." 10 60
         fi
     fi
 }
@@ -202,16 +219,16 @@ system_update() {
 
 system_repair() {
     clear
-    echo "🔧 Limpando cache do terminal..."
+    echo "🔧 Limpando cache..."
     reset
-    echo "🔧 Reparando permissões..."
+    echo "🔧 Reparando..."
     mkdir -p "$BASE_DIR/data" "$BASE_DIR/logs"
     chown -R root:root "$BASE_DIR"
     if command -v ufw &> /dev/null; then
         ufw allow 22/tcp
         ufw --force enable
     fi
-    echo "✅ Sistema Reparado."
+    echo "✅ Feito."
     sleep 2
 }
 
@@ -230,7 +247,7 @@ admin_menu() {
     while true; do
         CHOICE=$(whiptail --title "ADMINISTRAÇÃO" --menu "Opções" 20 70 10 \
         "1" "Atualizar Painel" \
-        "2" "Reparar Sistema (Limpar Cache)" \
+        "2" "Reparar Sistema" \
         "3" "Desinstalar" \
         "0" "Voltar" 3>&1 1>&2 2>&3)
         case $CHOICE in
